@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Podcast Generator</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-card">
+      <h1>Podcast Generator</h1>
+
+      <div class="auth-tabs">
+        <button class="auth-tab {% if active_tab == 'login' %}active{% endif %}" onclick="showTab('login')">Sign in</button>
+        <button class="auth-tab {% if active_tab == 'register' %}active{% endif %}" onclick="showTab('register')">Register</button>
+      </div>
+
+      {% if error == 'invalid' %}
+        <div class="alert alert-error">Invalid username or password.</div>
+      {% elif error == 'taken' %}
+        <div class="alert alert-error">Username is already taken.</div>
+      {% elif error == 'short' %}
+        <div class="alert alert-error">Username must be 3+ chars and password 6+ chars.</div>
+      {% endif %}
+
+      {% if registered %}
+        <div class="alert alert-success">Account created. Sign in below.</div>
+      {% endif %}
+
+      <!-- Login form -->
+      <form id="form-login" method="post" action="/login" style="{% if active_tab != 'login' %}display:none{% endif %}">
+        <div class="form-group">
+          <label for="login-username">Username</label>
+          <input id="login-username" type="text" name="username" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input id="login-password" type="password" name="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn" style="width:100%">Sign in</button>
+      </form>
+
+      <!-- Register form -->
+      <form id="form-register" method="post" action="/register" style="{% if active_tab != 'register' %}display:none{% endif %}">
+        <div class="form-group">
+          <label for="reg-username">Username</label>
+          <input id="reg-username" type="text" name="username" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label for="reg-password">Password</label>
+          <input id="reg-password" type="password" name="password" autocomplete="new-password" required>
+        </div>
+        <button type="submit" class="btn" style="width:100%">Create account</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function showTab(tab) {
+      document.getElementById('form-login').style.display = tab === 'login' ? '' : 'none';
+      document.getElementById('form-register').style.display = tab === 'register' ? '' : 'none';
+      document.querySelectorAll('.auth-tab').forEach((el, i) => {
+        el.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && tab === 'register'));
+      });
+    }
+  </script>
+</body>
+</html>
