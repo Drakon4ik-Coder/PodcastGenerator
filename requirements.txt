@@ -3,7 +3,7 @@ uvicorn[standard]
 jinja2
 python-multipart
 python-jose[cryptography]
-passlib[bcrypt]
+passlib
 kokoro>=0.9.4
 soundfile
 numpy
