@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+jinja2
+python-multipart
+python-jose[cryptography]
+passlib[bcrypt]
+kokoro>=0.9.4
+soundfile
+numpy
+python-dotenv
+aiofiles
