@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Podcast Generator</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <nav>
+    <a class="nav-brand" href="/app">Podcast Generator</a>
+    <div class="nav-links">
+      <a href="/account">My recordings</a>
+      <a href="/logout">Sign out</a>
+    </div>
+  </nav>
+  <main>
+    <h1>Text to Speech</h1>
+    <textarea id="text-input" placeholder="Paste your text here…"></textarea>
+    <div class="controls-row">
+      <button id="generate-btn" class="btn" onclick="generate()">Generate</button>
+      <span id="status" class="status"></span>
+    </div>
+    <div id="transcript-section" class="transcript-section" style="display:none">
+      <div class="transcript-label">Transcript</div>
+      <div id="transcript" class="transcript"></div>
+    </div>
+    <div id="audio-section" class="audio-section" style="display:none">
+      <p>Full recording</p>
+      <audio id="audio-player" controls></audio>
+    </div>
+  </main>
+  <script>
+    let audioCtx = null, scheduledEnd = 0, sentenceTimings = [], activeIndex = -1, rafId = null, abortCtrl = null;
+    const btn = document.getElementById('generate-btn');
+    const status = document.getElementById('status');
+    const transcript = document.getElementById('transcript');
+    const transcriptSection = document.getElementById('transcript-section');
+    const audioSection = document.getElementById('audio-section');
+    const audioPlayer = document.getElementById('audio-player');
+
+    async function generate() {
+      const text = document.getElementById('text-input').value.trim();
+      if (!text) return;
+      if (abortCtrl) abortCtrl.abort();
+      abortCtrl = new AbortController();
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      if (audioCtx) audioCtx.close();
+      audioCtx = new AudioContext();
+      scheduledEnd = audioCtx.currentTime;
+      sentenceTimings = []; activeIndex = -1;
+      transcript.innerHTML = '';
+      transcriptSection.style.display = 'none';
+      audioSection.style.display = 'none';
+      btn.disabled = true;
+      status.textContent = 'Loading model…';
+      try {
+        const res = await fetch('/api/tts/generate', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text}), signal: abortCtrl.signal });
+        if (!res.ok) { if (res.status === 401) window.location = '/login'; status.textContent = 'Error: ' + res.statusText; return; }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const {value, done} = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, {stream: true});
+          const parts = buf.split('\n\n'); buf = parts.pop();
+          for (const part of parts) { if (!part.startsWith('data: ')) continue; await handleEvent(JSON.parse(part.slice(6))); }
+        }
+      } catch (e) { if (e.name !== 'AbortError') status.textContent = 'Error: ' + e.message; }
+      finally { btn.disabled = false; }
+    }
+
+    async function handleEvent(data) {
+      if (data.type === 'segment') {
+        if (sentenceTimings.length === 0 && transcript.children.length === 0) transcriptSection.style.display = '';
+        const div = document.createElement('div');
+        div.className = 'sentence'; div.dataset.index = data.index; div.textContent = data.text;
+        transcript.appendChild(div);
+        const bytes = Uint8Array.from(atob(data.audio), c => c.charCodeAt(0));
+        let audioBuffer;
+        try { audioBuffer = await audioCtx.decodeAudioData(bytes.buffer); } catch(e) { console.warn(e); return; }
+        const start = Math.max(audioCtx.currentTime + 0.05, scheduledEnd);
+        const src = audioCtx.createBufferSource();
+        src.buffer = audioBuffer; src.connect(audioCtx.destination); src.start(start);
+        sentenceTimings.push({index: data.index, start, end: start + audioBuffer.duration});
+        scheduledEnd = start + audioBuffer.duration;
+        status.textContent = `Generating… (${data.index + 1} segment${data.index ? 's' : ''})`;
+        if (!rafId) rafId = requestAnimationFrame(updateHighlight);
+      } else if (data.type === 'done') {
+        status.textContent = 'Done';
+        audioPlayer.src = `/api/audio/${data.audio_id}`;
+        audioSection.style.display = '';
+      } else if (data.type === 'error') {
+        status.textContent = 'Error: ' + data.message;
+      }
+    }
+
+    function updateHighlight() {
+      if (!audioCtx) { rafId = null; return; }
+      const now = audioCtx.currentTime;
+      let newActive = -1;
+      for (const t of sentenceTimings) { if (now >= t.start && now < t.end) { newActive = t.index; break; } }
+      if (newActive !== activeIndex) {
+        document.querySelectorAll('.sentence.active').forEach(el => el.classList.remove('active'));
+        if (newActive >= 0) { const el = document.querySelector(`.sentence[data-index="${newActive}"]`); if (el) { el.classList.add('active'); el.scrollIntoView({behavior:'smooth',block:'nearest'}); } }
+        activeIndex = newActive;
+      }
+      rafId = requestAnimationFrame(updateHighlight);
+    }
+  </script>
+</body>
+</html>
