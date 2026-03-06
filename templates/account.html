@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Recordings – Podcast Generator</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <nav>
+    <a class="nav-brand" href="/app">Podcast Generator</a>
+    <div class="nav-links">
+      <a href="/account" style="color: var(--text)">My recordings</a>
+      <a href="/logout">Sign out</a>
+    </div>
+  </nav>
+  <main>
+    <h1>My Recordings</h1>
+    {% if files %}
+      <div class="audio-list">
+        {% for f in files %}
+          <div class="audio-card">
+            <div class="audio-card-meta">
+              <span>{{ f.created_at[:16] }}</span>
+              {% if f.duration_seconds %}<span>{{ "%.0f"|format(f.duration_seconds) }}s</span>{% endif %}
+            </div>
+            <div class="audio-card-text">{{ f.original_text }}</div>
+            <audio controls src="/api/audio/{{ f.id }}"></audio>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">No recordings yet. <a href="/app">Generate your first one.</a></div>
+    {% endif %}
+  </main>
+</body>
+</html>
