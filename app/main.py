@@ -101,8 +101,9 @@ async def generate_tts(request: Request, user=Depends(get_current_user)):
                 pipeline = get_pipeline()
                 for gs, _, audio in pipeline(text, voice=VOICE, speed=1.0):
                     if audio is not None and len(audio) > 0:
-                        b64 = audio_to_base64(audio)
-                        loop.call_soon_threadsafe(queue.put_nowait, ("segment", gs, audio.copy(), b64))
+                        audio_np = audio.detach().cpu().numpy() if hasattr(audio, 'detach') else audio
+                        b64 = audio_to_base64(audio_np)
+                        loop.call_soon_threadsafe(queue.put_nowait, ("segment", gs, audio_np.copy(), b64))
             except Exception as exc:
                 loop.call_soon_threadsafe(queue.put_nowait, ("error", str(exc), None, None))
             finally:
