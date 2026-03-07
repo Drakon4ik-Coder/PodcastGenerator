@@ -1,0 +1,96 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Test job — runs on every push and PR
+  # -------------------------------------------------------------------------
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install system dependencies
+        run: sudo apt-get install -y espeak-ng libsndfile1
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  # -------------------------------------------------------------------------
+  # Deploy job — runs only on push to main after tests pass
+  # -------------------------------------------------------------------------
+  deploy:
+    name: Deploy to production
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cloudflared
+        run: |
+          curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+            | sudo tee /usr/share/keyrings/cloudflare-main.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] \
+            https://pkg.cloudflare.com/cloudflared any main" \
+            | sudo tee /etc/apt/sources.list.d/cloudflared.list
+          sudo apt-get update && sudo apt-get install -y cloudflared
+
+      - name: Configure SSH
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config << 'EOF'
+          Host podgen-server
+            HostName ssh.drakon4ik.uk
+            User deployer
+            Port 22
+            ProxyCommand cloudflared access ssh --hostname %h
+            IdentityFile ~/.ssh/id_ed25519
+            StrictHostKeyChecking no
+          EOF
+
+      - name: Sync files to server
+        run: |
+          rsync -av --delete \
+            --exclude='.git' \
+            --exclude='.venv' \
+            --exclude='data/' \
+            --exclude='*.db' \
+            --exclude='.env' \
+            --exclude='__pycache__' \
+            --exclude='.pytest_cache' \
+            -e "ssh -F ~/.ssh/config" \
+            ./ podgen-server:~/podgen/
+
+      - name: Rebuild image and restart container
+        run: |
+          ssh -F ~/.ssh/config podgen-server \
+            "cd ~/podgen && docker build -t podgen:latest . && docker compose up -d"
