@@ -112,6 +112,7 @@ async def generate_tts(request: Request, user=Depends(get_current_user)):
         threading.Thread(target=tts_worker, daemon=True).start()
         index = 0
         error_occurred = False
+        segment_durations: list = []
         while True:
             item = await queue.get()
             if item is None:
@@ -123,6 +124,7 @@ async def generate_tts(request: Request, user=Depends(get_current_user)):
                 break
             all_audio.append(audio)
             segments.append(gs)
+            segment_durations.append(float(len(audio) / SAMPLE_RATE))
             yield f"data: {json.dumps({'type': 'segment', 'index': index, 'text': gs, 'audio': b64})}\n\n"
             index += 1
 
@@ -134,8 +136,8 @@ async def generate_tts(request: Request, user=Depends(get_current_user)):
             duration = len(full_audio) / SAMPLE_RATE
             with get_db() as conn:
                 cursor = conn.execute(
-                    "INSERT INTO audio_files (user_id, filename, original_text, segments_json, duration_seconds) VALUES (?, ?, ?, ?, ?)",
-                    (user["id"], filename, text, json.dumps(segments), duration))
+                    "INSERT INTO audio_files (user_id, filename, original_text, segments_json, segment_durations_json, duration_seconds) VALUES (?, ?, ?, ?, ?, ?)",
+                    (user["id"], filename, text, json.dumps(segments), json.dumps(segment_durations), duration))
                 audio_id = cursor.lastrowid
             yield f"data: {json.dumps({'type': 'done', 'audio_id': audio_id})}\n\n"
 
@@ -151,3 +153,28 @@ def serve_audio(audio_id: int, user=Depends(get_current_user)):
     if not os.path.exists(path):
         raise HTTPException(404)
     return FileResponse(path, media_type="audio/wav")
+
+@app.patch("/api/audio/{audio_id}/title")
+async def rename_audio(audio_id: int, request: Request, user=Depends(get_current_user)):
+    body = await request.json()
+    title = (body.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "Title must not be empty")
+    with get_db() as conn:
+        af = conn.execute("SELECT id FROM audio_files WHERE id = ? AND user_id = ?", (audio_id, user["id"])).fetchone()
+        if not af:
+            raise HTTPException(404)
+        conn.execute("UPDATE audio_files SET title = ? WHERE id = ?", (title, audio_id))
+    return {"ok": True}
+
+@app.delete("/api/audio/{audio_id}")
+def delete_audio(audio_id: int, user=Depends(get_current_user)):
+    with get_db() as conn:
+        af = conn.execute("SELECT * FROM audio_files WHERE id = ? AND user_id = ?", (audio_id, user["id"])).fetchone()
+        if not af:
+            raise HTTPException(404)
+        path = os.path.join(AUDIO_DIR, af["filename"])
+        conn.execute("DELETE FROM audio_files WHERE id = ?", (audio_id,))
+    if os.path.exists(path):
+        os.remove(path)
+    return {"ok": True}

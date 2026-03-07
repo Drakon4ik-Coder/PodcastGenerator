@@ -87,10 +87,10 @@ jobs:
             --exclude='.env' \
             --exclude='__pycache__' \
             --exclude='.pytest_cache' \
-            -e "ssh -F ~/.ssh/config" \
+            -e ssh \
             ./ podgen-server:~/podgen/
 
       - name: Rebuild image and restart container
         run: |
-          ssh -F ~/.ssh/config podgen-server \
+          ssh podgen-server \
             "cd ~/podgen && docker build -t podgen:latest . && docker compose up -d"
