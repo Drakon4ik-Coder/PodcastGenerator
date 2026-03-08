@@ -4,7 +4,9 @@
 
 A self-hosted text-to-speech web app powered by [Kokoro](https://github.com/hexgrad/kokoro). Paste text, hit Generate, and listen as audio streams in real time — each sentence highlighted as it plays. All recordings are saved to your personal library.
 
-![App screenshot placeholder](docs/screenshot.png)
+**Live demo: [podgen.drakon4ik.uk](https://podgen.drakon4ik.uk)**
+
+![Demo](images/demo.gif)
 
 ---
 
