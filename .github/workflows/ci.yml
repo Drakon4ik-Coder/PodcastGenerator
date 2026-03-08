@@ -67,6 +67,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$DEPLOY_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          echo "ssh.drakon4ik.uk ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEpcyc/wA+f+TGOJ6H6I8zxxddw5f3YnaFh6+DWq9ncQ" >> ~/.ssh/known_hosts
           cat >> ~/.ssh/config << 'EOF'
           Host podgen-server
             HostName ssh.drakon4ik.uk
@@ -74,7 +75,7 @@ jobs:
             Port 22
             ProxyCommand cloudflared access ssh --hostname %h
             IdentityFile ~/.ssh/id_ed25519
-            StrictHostKeyChecking no
+            StrictHostKeyChecking yes
           EOF
 
       - name: Sync files to server
