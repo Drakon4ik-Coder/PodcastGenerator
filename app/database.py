@@ -23,17 +23,33 @@ def init_db():
                 duration_seconds REAL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS audio_segments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                audio_id INTEGER NOT NULL REFERENCES audio_files(id),
+                segment_index INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                audio_b64 TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
             PRAGMA journal_mode=WAL;
         """)
         # Migrations: add columns introduced after initial schema
         for stmt in [
             "ALTER TABLE audio_files ADD COLUMN title TEXT",
             "ALTER TABLE audio_files ADD COLUMN segment_durations_json TEXT",
+            "ALTER TABLE audio_files ADD COLUMN status TEXT DEFAULT 'completed'",
+            "ALTER TABLE audio_files ADD COLUMN voice TEXT",
         ]:
             try:
                 conn.execute(stmt)
             except Exception:
                 pass  # Column already exists
+
+
+def cleanup_stale_jobs():
+    """Mark any 'generating' rows as 'pending' on startup (restart recovery)."""
+    with get_db() as conn:
+        conn.execute("UPDATE audio_files SET status = 'pending' WHERE status = 'generating'")
 
 
 @contextmanager

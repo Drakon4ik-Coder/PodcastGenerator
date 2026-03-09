@@ -1,7 +1,7 @@
 """Unit tests for database initialisation, migrations, and connection management."""
 import sqlite3
 import pytest
-from app.database import init_db, get_db
+from app.database import init_db, get_db, cleanup_stale_jobs
 
 
 class TestInitDb:
@@ -142,3 +142,65 @@ class TestUserCRUD:
                     "INSERT INTO users (username, password_hash) VALUES (?, ?)",
                     ("unique", "h2"),
                 )
+
+
+class TestNewMigrations:
+    def test_migration_adds_status_column(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("app.database.DB_PATH", str(tmp_path / "db.db"))
+        init_db()
+        with get_db() as conn:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(audio_files)")}
+        assert "status" in cols
+
+    def test_migration_adds_voice_column(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("app.database.DB_PATH", str(tmp_path / "db.db"))
+        init_db()
+        with get_db() as conn:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(audio_files)")}
+        assert "voice" in cols
+
+    def test_audio_segments_table_created(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("app.database.DB_PATH", str(tmp_path / "db.db"))
+        init_db()
+        with get_db() as conn:
+            tables = {
+                r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+        assert "audio_segments" in tables
+
+    def test_status_default_is_completed(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("app.database.DB_PATH", str(tmp_path / "db.db"))
+        init_db()
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                ("testuser", "hash"),
+            )
+            conn.execute(
+                "INSERT INTO audio_files (user_id, filename, original_text, segments_json) "
+                "VALUES (?, ?, ?, ?)",
+                (1, "test.wav", "test", "[]"),
+            )
+        with get_db() as conn:
+            row = conn.execute("SELECT status FROM audio_files WHERE id = 1").fetchone()
+        assert row["status"] == "completed"
+
+    def test_cleanup_stale_jobs(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("app.database.DB_PATH", str(tmp_path / "db.db"))
+        init_db()
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                ("testuser", "hash"),
+            )
+            conn.execute(
+                "INSERT INTO audio_files (user_id, filename, original_text, segments_json, status) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (1, "", "test", "[]", "generating"),
+            )
+        cleanup_stale_jobs()
+        with get_db() as conn:
+            row = conn.execute("SELECT status FROM audio_files WHERE id = 1").fetchone()
+        assert row["status"] == "pending"
