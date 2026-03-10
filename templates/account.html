@@ -23,9 +23,22 @@
             <div class="audio-card-meta">
               <span>{{ f.created_at[:16] }}</span>
               {% if f.duration_seconds %}<span>{{ "%.0f"|format(f.duration_seconds) }}s</span>{% endif %}
+              {% if f.status == 'generating' %}
+                <span class="badge badge-generating">In progress</span>
+              {% elif f.status == 'pending' %}
+                <span class="badge badge-pending">Queued</span>
+              {% elif f.status == 'failed' %}
+                <span class="badge badge-failed">Failed</span>
+              {% endif %}
             </div>
             <div class="audio-card-text">{{ f.original_text }}</div>
-            <audio controls src="/api/audio/{{ f.id }}"></audio>
+            {% if f.status == 'generating' or f.status == 'pending' %}
+              <a href="/app" class="btn btn-sm btn-outline">Resume</a>
+            {% elif f.status == 'failed' %}
+              {# No audio player for failed jobs #}
+            {% else %}
+              <audio controls src="/api/audio/{{ f.id }}"></audio>
+            {% endif %}
           </div>
         {% endfor %}
       </div>

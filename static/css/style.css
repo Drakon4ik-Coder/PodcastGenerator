@@ -364,5 +364,24 @@ label {
 
 .captions:empty { display: none; }
 
+/* Badges */
+.badge { font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 4px; font-weight: 500; }
+.badge-generating { background: #fef3c7; color: #b45309; }
+.badge-failed { background: #fee2e2; color: #b91c1c; }
+.badge-pending { background: #e0e7ff; color: #3730a3; }
+
+/* Voice select */
+.voice-select {
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: var(--surface);
+  outline: none;
+  cursor: pointer;
+}
+.voice-select:focus { border-color: var(--accent); }
+
 .captions .sentence { cursor: pointer; }
 .captions .sentence:hover { background: var(--bg); }

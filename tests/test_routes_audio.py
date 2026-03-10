@@ -180,3 +180,41 @@ class TestAccountPage:
         assert resp.status_code == 200
         # With no recordings, shows the empty state link or list is empty
         assert b"Generate" in resp.content or b"generate" in resp.content.lower()
+
+    def test_account_shows_in_progress_badge(self, auth_client):
+        """Insert a generating row and verify badge text in HTML."""
+        from app.database import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO audio_files (user_id, filename, original_text, segments_json, status) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (1, "", "test text", "[]", "generating"),
+            )
+        resp = auth_client.get("/account")
+        assert resp.status_code == 200
+        assert b"In progress" in resp.content
+
+    def test_account_shows_failed_badge(self, auth_client):
+        from app.database import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO audio_files (user_id, filename, original_text, segments_json, status) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (1, "", "test text", "[]", "failed"),
+            )
+        resp = auth_client.get("/account")
+        assert resp.status_code == 200
+        assert b"Failed" in resp.content
+
+    def test_account_hides_audio_for_generating_rows(self, auth_client):
+        from app.database import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO audio_files (user_id, filename, original_text, segments_json, status) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (1, "", "in progress text", "[]", "generating"),
+            )
+        resp = auth_client.get("/account")
+        assert resp.status_code == 200
+        # Should have Resume link instead of audio element for this row
+        assert b"Resume" in resp.content
