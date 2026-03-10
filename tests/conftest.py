@@ -2,8 +2,7 @@ import os
 import json
 import numpy as np
 import pytest
-from unittest.mock import MagicMock, patch
-from fastapi.testclient import TestClient
+from unittest.mock import MagicMock, patch, AsyncMock
 
 
 # ---------------------------------------------------------------------------
@@ -23,6 +22,27 @@ def make_mock_pipeline():
 
 
 # ---------------------------------------------------------------------------
+# Kafka mock helpers
+# ---------------------------------------------------------------------------
+
+def _patch_kafka():
+    """Patch aiokafka so tests don't need a running Kafka broker."""
+    mock_producer = AsyncMock()
+    mock_producer.start = AsyncMock()
+    mock_producer.stop = AsyncMock()
+    mock_producer.send_and_wait = AsyncMock(side_effect=Exception("Kafka not available"))
+
+    mock_consumer = AsyncMock()
+    mock_consumer.start = AsyncMock()
+    mock_consumer.stop = AsyncMock()
+
+    producer_patch = patch("aiokafka.AIOKafkaProducer", return_value=mock_producer)
+    consumer_patch = patch("aiokafka.AIOKafkaConsumer", return_value=mock_consumer)
+
+    return producer_patch, consumer_patch, mock_producer, mock_consumer
+
+
+# ---------------------------------------------------------------------------
 # Core fixtures
 # ---------------------------------------------------------------------------
 
@@ -39,13 +59,27 @@ def client(tmp_path, monkeypatch):
 
     # Prevent the startup pre-warm thread from loading the real Kokoro model
     with patch("app.tts.get_pipeline", return_value=make_mock_pipeline()):
-        from app.main import app
-        from app.database import init_db
+        producer_patch, consumer_patch, _, _ = _patch_kafka()
+        with producer_patch, consumer_patch:
+            from app.main import app
+            from app.database import init_db
+            from app import jobs
 
-        init_db()
+            # Reset global Kafka producer state
+            import app.main as main_mod
+            main_mod._kafka_producer = None
 
-        with TestClient(app, raise_server_exceptions=True) as c:
-            yield c
+            # Clear in-memory jobs between tests
+            jobs.clear_all()
+
+            init_db()
+
+            with TestClient(app, raise_server_exceptions=True) as c:
+                yield c
+
+
+# Need to import TestClient at module level for the fixture
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture()
@@ -100,10 +134,13 @@ def parse_sse(text: str) -> list[dict]:
     return events
 
 
-def generate_audio(client, text: str = "Hello world. This is a test.") -> dict:
+def generate_audio(client, text: str = "Hello world. This is a test.", voice: str = None) -> dict:
     """Call /api/tts/generate with a mock pipeline and return the done event."""
+    body = {"text": text}
+    if voice:
+        body["voice"] = voice
     with patch("app.tts.get_pipeline", return_value=make_mock_pipeline()):
-        resp = client.post("/api/tts/generate", json={"text": text})
+        resp = client.post("/api/tts/generate", json=body)
     assert resp.status_code == 200
     events = parse_sse(resp.text)
     done = next(e for e in events if e["type"] == "done")

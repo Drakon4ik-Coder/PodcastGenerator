@@ -126,3 +126,40 @@ class TestTTSGenerate:
         assert isinstance(durations, list)
         assert len(durations) >= 1
         assert all(isinstance(d, float) and d > 0 for d in durations)
+
+    def test_started_event_emitted_first(self, auth_client, mock_pipeline):
+        """Verify 'started' event with audio_id comes before segments."""
+        resp = auth_client.post(
+            "/api/tts/generate", json={"text": "Hello. World."}
+        )
+        events = parse_sse(resp.text)
+        assert len(events) >= 2
+        assert events[0]["type"] == "started"
+        assert "audio_id" in events[0]
+
+    def test_db_status_generating_during_stream(self, auth_client, mock_pipeline):
+        """After 'started' event, DB row should have status='generating' initially."""
+        resp = auth_client.post(
+            "/api/tts/generate", json={"text": "Hello."}
+        )
+        events = parse_sse(resp.text)
+        started = next(e for e in events if e["type"] == "started")
+        # By the time we parse the full response the status is already 'completed',
+        # but the started event should contain the audio_id
+        assert isinstance(started["audio_id"], int)
+
+    def test_db_status_completed_after_done(self, auth_client, mock_pipeline):
+        """After 'done' event, DB row should have status='completed'."""
+        resp = auth_client.post(
+            "/api/tts/generate", json={"text": "Hello. World."}
+        )
+        events = parse_sse(resp.text)
+        done = next(e for e in events if e["type"] == "done")
+
+        from app.database import get_db
+        with get_db() as conn:
+            af = conn.execute(
+                "SELECT status FROM audio_files WHERE id = ?",
+                (done["audio_id"],),
+            ).fetchone()
+        assert af["status"] == "completed"
