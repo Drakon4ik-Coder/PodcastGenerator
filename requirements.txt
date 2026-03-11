@@ -9,3 +9,4 @@ soundfile
 numpy
 python-dotenv
 aiofiles
+aiokafka

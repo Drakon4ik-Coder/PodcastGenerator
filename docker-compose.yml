@@ -1,8 +1,25 @@
 services:
+  redpanda:
+    image: redpandadata/redpanda:latest
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=256M
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    restart: unless-stopped
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+
   web:
     build: .
     image: podgen:latest
     restart: unless-stopped
+    depends_on:
+      - redpanda
     volumes:
       - ./data:/data
     env_file: .env
@@ -10,5 +27,25 @@ services:
       - DB_PATH=/data/podcast.db
       - AUDIO_DIR=/data/audio
       - HF_HOME=/data/hf_cache
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
     ports:
       - "127.0.0.1:8000:8000"
+
+  worker:
+    build: .
+    image: podgen:latest
+    restart: unless-stopped
+    depends_on:
+      - redpanda
+    volumes:
+      - ./data:/data
+    env_file: .env
+    environment:
+      - DB_PATH=/data/podcast.db
+      - AUDIO_DIR=/data/audio
+      - HF_HOME=/data/hf_cache
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+    command: ["python", "-m", "app.worker"]
+
+volumes:
+  redpanda-data:
