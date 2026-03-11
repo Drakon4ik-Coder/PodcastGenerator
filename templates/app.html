@@ -16,12 +16,13 @@
   </nav>
   <main>
     <h1>Text to Speech</h1>
-    <textarea id="text-input" placeholder="Paste your text here…"></textarea>
+    <textarea id="text-input" placeholder="Paste your text here…" maxlength="100000"></textarea>
     <div class="controls-row">
       <select id="voice-select" class="voice-select">
         <option value="">Loading voices…</option>
       </select>
       <button id="generate-btn" class="btn" onclick="generate()">Generate</button>
+      <button id="stop-btn" class="btn btn-outline" onclick="stopPlayback()" style="display:none">Stop</button>
       <span id="status" class="status"></span>
     </div>
     <div id="transcript-section" class="transcript-section" style="display:none">
@@ -37,6 +38,7 @@
     let audioCtx = null, scheduledEnd = 0, sentenceTimings = [], activeIndex = -1, rafId = null, abortCtrl = null;
     let currentAudioId = null;
     const btn = document.getElementById('generate-btn');
+    const stopBtn = document.getElementById('stop-btn');
     const status = document.getElementById('status');
     const transcript = document.getElementById('transcript');
     const transcriptSection = document.getElementById('transcript-section');
@@ -121,6 +123,7 @@
       transcriptSection.style.display = 'none';
       audioSection.style.display = 'none';
       btn.disabled = true;
+      stopBtn.style.display = '';
       status.textContent = 'Loading model…';
       const voice = voiceSelect.value;
       try {
@@ -137,7 +140,16 @@
           for (const part of parts) { if (!part.startsWith('data: ')) continue; await handleEvent(JSON.parse(part.slice(6))); }
         }
       } catch (e) { if (e.name !== 'AbortError') status.textContent = 'Error: ' + e.message; }
-      finally { btn.disabled = false; }
+      finally { btn.disabled = false; stopBtn.style.display = 'none'; }
+    }
+
+    function stopPlayback() {
+      if (abortCtrl) abortCtrl.abort();
+      if (audioCtx) { audioCtx.close(); audioCtx = null; }
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      btn.disabled = false;
+      stopBtn.style.display = 'none';
+      status.textContent = 'Stopped';
     }
 
     async function handleEvent(data) {

@@ -52,11 +52,19 @@ async def kafka_events_consumer():
                 event_type = event.get("type")
 
                 if event_type == "segment":
-                    jobs.add_segment(audio_id, {
-                        "index": event["index"],
-                        "text": event["text"],
-                        "audio": event["audio"],
-                    })
+                    seg_index = event["index"]
+                    # Read segment data from DB (worker stores it there)
+                    with get_db() as conn:
+                        row = conn.execute(
+                            "SELECT text, audio_b64 FROM audio_segments WHERE audio_id = ? AND segment_index = ?",
+                            (audio_id, seg_index),
+                        ).fetchone()
+                    if row:
+                        jobs.add_segment(audio_id, {
+                            "index": seg_index,
+                            "text": row["text"],
+                            "audio": row["audio_b64"],
+                        })
                 elif event_type == "done":
                     jobs.finish_job(audio_id)
                     # Schedule cleanup after delay

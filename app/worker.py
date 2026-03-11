@@ -62,13 +62,11 @@ async def process_job(msg_value: dict, producer):
                         (audio_id, index, gs, b64),
                     )
 
-                # Notify via Kafka
+                # Notify via Kafka (lightweight — no audio payload)
                 await produce_event(producer, {
                     "audio_id": audio_id,
                     "type": "segment",
                     "index": index,
-                    "text": gs,
-                    "audio": b64,
                 })
 
                 all_audio.append(audio_np.copy())

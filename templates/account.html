@@ -19,10 +19,18 @@
     {% if files %}
       <div class="audio-list">
         {% for f in files %}
-          <div class="audio-card">
+          <div class="audio-card" id="card-{{ f.id }}">
+            <div class="audio-card-header">
+              <div class="audio-card-title">
+                <span class="title-text" id="title-{{ f.id }}">{{ f.title or f.original_text[:60] }}</span>
+                <button class="btn btn-ghost" onclick="startRename({{ f.id }}, this)">Rename</button>
+              </div>
+              <button class="btn btn-ghost btn-danger" onclick="deleteAudio({{ f.id }})">Delete</button>
+            </div>
             <div class="audio-card-meta">
               <span>{{ f.created_at[:16] }}</span>
               {% if f.duration_seconds %}<span>{{ "%.0f"|format(f.duration_seconds) }}s</span>{% endif %}
+              {% if f.voice %}<span>{{ f.voice }}</span>{% endif %}
               {% if f.status == 'generating' %}
                 <span class="badge badge-generating">In progress</span>
               {% elif f.status == 'pending' %}
@@ -37,7 +45,10 @@
             {% elif f.status == 'failed' %}
               {# No audio player for failed jobs #}
             {% else %}
-              <audio controls src="/api/audio/{{ f.id }}"></audio>
+              <audio controls src="/api/audio/{{ f.id }}" id="player-{{ f.id }}"
+                     data-segments='{{ f.segments_json or "[]" }}'
+                     data-durations='{{ f.segment_durations_json or "[]" }}'></audio>
+              <div class="captions" id="captions-{{ f.id }}"></div>
             {% endif %}
           </div>
         {% endfor %}
@@ -46,5 +57,98 @@
       <div class="empty-state">No recordings yet. <a href="/app">Generate your first one.</a></div>
     {% endif %}
   </main>
+  <script>
+    // Build captions for each audio card
+    document.querySelectorAll('audio[data-segments]').forEach(player => {
+      const id = player.id.replace('player-', '');
+      const segments = JSON.parse(player.dataset.segments || '[]');
+      const durations = JSON.parse(player.dataset.durations || '[]');
+      const container = document.getElementById('captions-' + id);
+      if (!segments.length || !container) return;
+
+      let offsets = [];
+      let t = 0;
+      for (let i = 0; i < durations.length; i++) {
+        offsets.push(t);
+        t += durations[i];
+      }
+
+      segments.forEach((text, i) => {
+        const div = document.createElement('div');
+        div.className = 'sentence';
+        div.textContent = text;
+        div.addEventListener('click', () => {
+          if (offsets[i] !== undefined) {
+            player.currentTime = offsets[i];
+            player.play();
+          }
+        });
+        container.appendChild(div);
+      });
+
+      // Highlight active caption during playback
+      player.addEventListener('timeupdate', () => {
+        const now = player.currentTime;
+        let active = -1;
+        for (let i = 0; i < offsets.length; i++) {
+          const end = (i + 1 < offsets.length) ? offsets[i + 1] : Infinity;
+          if (now >= offsets[i] && now < end) { active = i; break; }
+        }
+        container.querySelectorAll('.sentence').forEach((el, i) => {
+          el.classList.toggle('active', i === active);
+        });
+      });
+    });
+
+    // Rename
+    function startRename(id, btn) {
+      const titleEl = document.getElementById('title-' + id);
+      const current = titleEl.textContent;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'rename-input';
+      input.value = current;
+      titleEl.replaceWith(input);
+      btn.textContent = 'Save';
+      btn.onclick = () => saveRename(id, input, btn);
+      input.focus();
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') saveRename(id, input, btn);
+        if (e.key === 'Escape') location.reload();
+      });
+    }
+
+    async function saveRename(id, input, btn) {
+      const title = input.value.trim();
+      if (!title) return;
+      const res = await fetch(`/api/audio/${id}/title`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({title})
+      });
+      if (res.ok) {
+        const span = document.createElement('span');
+        span.className = 'title-text';
+        span.id = 'title-' + id;
+        span.textContent = title;
+        input.replaceWith(span);
+        btn.textContent = 'Rename';
+        btn.onclick = () => startRename(id, btn);
+      }
+    }
+
+    // Delete
+    async function deleteAudio(id) {
+      if (!confirm('Delete this recording?')) return;
+      const res = await fetch(`/api/audio/${id}`, {method: 'DELETE'});
+      if (res.ok) {
+        document.getElementById('card-' + id).remove();
+        if (!document.querySelector('.audio-card')) {
+          document.querySelector('.audio-list').innerHTML =
+            '<div class="empty-state">No recordings yet. <a href="/app">Generate your first one.</a></div>';
+        }
+      }
+    }
+  </script>
 </body>
 </html>
