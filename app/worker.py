@@ -34,6 +34,13 @@ async def process_job(msg_value: dict, producer):
     text = msg_value["text"]
     voice = validate_voice(msg_value.get("voice", ""))
 
+    # Skip jobs already completed or explicitly failed
+    with get_db() as conn:
+        row = conn.execute("SELECT status FROM audio_files WHERE id = ?", (audio_id,)).fetchone()
+    if row and row["status"] in ("completed", "failed"):
+        log.info("Skipping job audio_id=%d with status=%s", audio_id, row["status"])
+        return
+
     log.info("Processing job audio_id=%d voice=%s", audio_id, voice)
 
     # Mark as generating
@@ -151,6 +158,7 @@ async def main():
         group_id="tts-worker",
         enable_auto_commit=False,
         auto_offset_reset="earliest",
+        max_poll_interval_ms=3600000,  # 1 hour — allow long TTS jobs without poll timeout
     )
     await consumer.start()
     log.info("Worker started, consuming from %s", TTS_JOBS_TOPIC)
