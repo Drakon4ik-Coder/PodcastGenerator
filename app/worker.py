@@ -50,29 +50,37 @@ async def process_job(msg_value: dict, producer):
         segment_durations = []
         index = 0
 
-        for gs, _, audio in pipeline(text, voice=voice, speed=1.0):
-            if audio is not None and len(audio) > 0:
-                audio_np = audio.detach().cpu().numpy() if hasattr(audio, "detach") else audio
-                b64 = audio_to_base64(audio_np)
+        # Run the blocking TTS pipeline in a thread so the asyncio event loop
+        # stays alive for Kafka heartbeats (prevents session timeout / rebalance loop).
+        loop = asyncio.get_event_loop()
+        raw_segments = await loop.run_in_executor(
+            None,
+            lambda: [(gs, audio) for gs, _, audio in pipeline(text, voice=voice, speed=1.0)
+                     if audio is not None and len(audio) > 0],
+        )
 
-                # Store segment in DB
-                with get_db() as conn:
-                    conn.execute(
-                        "INSERT INTO audio_segments (audio_id, segment_index, text, audio_b64) VALUES (?, ?, ?, ?)",
-                        (audio_id, index, gs, b64),
-                    )
+        for gs, audio in raw_segments:
+            audio_np = audio.detach().cpu().numpy() if hasattr(audio, "detach") else audio
+            b64 = audio_to_base64(audio_np)
 
-                # Notify via Kafka (lightweight — no audio payload)
-                await produce_event(producer, {
-                    "audio_id": audio_id,
-                    "type": "segment",
-                    "index": index,
-                })
+            # Store segment in DB
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO audio_segments (audio_id, segment_index, text, audio_b64) VALUES (?, ?, ?, ?)",
+                    (audio_id, index, gs, b64),
+                )
 
-                all_audio.append(audio_np.copy())
-                segments.append(gs)
-                segment_durations.append(float(len(audio_np) / SAMPLE_RATE))
-                index += 1
+            # Notify via Kafka (lightweight — no audio payload)
+            await produce_event(producer, {
+                "audio_id": audio_id,
+                "type": "segment",
+                "index": index,
+            })
+
+            all_audio.append(audio_np.copy())
+            segments.append(gs)
+            segment_durations.append(float(len(audio_np) / SAMPLE_RATE))
+            index += 1
 
         if all_audio:
             full_audio = np.concatenate(all_audio)
